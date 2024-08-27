@@ -282,10 +282,11 @@ public class MM extends AndroidNonvisibleComponent {
         }
     }
 
-    private static class MeiteiMayekReverseTransliterator {
+     private static class MeiteiMayekReverseTransliterator {
         private final Set<String> vowels = new HashSet<>(Arrays.asList("a", "e", "i", "o", "u"));
         private final Map<String, String> reverseMeiteiMayekMapping = new HashMap<>();
         private final Map<String, String> reverseMeiteiMayekNumbers = new HashMap<>();
+        private final String APUN_MAYEK = "\uABED";
 
         MeiteiMayekReverseTransliterator() {
             for (String[] phoneme : MEITEI_MAYEK_PHONEMES) {
@@ -300,32 +301,54 @@ public class MM extends AndroidNonvisibleComponent {
 
         String reverseTransliterate(String text) {
             StringBuilder result = new StringBuilder();
-            for (int i = 0; i < text.length(); i++) {
-                String character = String.valueOf(text.charAt(i));
-                String nextChar = i + 1 < text.length() ? String.valueOf(text.charAt(i + 1)) : "";
+            boolean lastWasConsonant = false;
+            boolean skipNext = false;
 
-                if (reverseMeiteiMayekNumbers.containsKey(character)) {
-                    result.append(reverseMeiteiMayekNumbers.get(character));
+            for (int i = 0; i < text.length(); i++) {
+                if (skipNext) {
+                    skipNext = false;
                     continue;
                 }
 
-                if (reverseMeiteiMayekMapping.containsKey(character) && isLonsum(character)) {
-                    result.append(reverseMeiteiMayekMapping.get(character));
+                String character = String.valueOf(text.charAt(i));
+                String nextChar = i + 1 < text.length() ? String.valueOf(text.charAt(i + 1)) : "";
+                String nextNextChar = i + 2 < text.length() ? String.valueOf(text.charAt(i + 2)) : "";
+
+                if (reverseMeiteiMayekNumbers.containsKey(character)) {
+                    result.append(reverseMeiteiMayekNumbers.get(character));
+                    lastWasConsonant = false;
                     continue;
                 }
 
                 if (reverseMeiteiMayekMapping.containsKey(character)) {
                     String phoneme = reverseMeiteiMayekMapping.get(character);
-                    result.append(phoneme);
 
-                    if (!nextChar.isEmpty() && reverseMeiteiMayekMapping.containsKey(nextChar) && isVowelDiacritic(nextChar)) {
-                        String vowelPhoneme = reverseMeiteiMayekMapping.get(nextChar);
-                        if (!vowels.contains(phoneme)) {
-                            result.append(vowelPhoneme);
+                    if (isLonsum(character)) {
+                        result.append(phoneme);
+                        lastWasConsonant = true;
+                    } else if (isVowel(phoneme)) {
+                        if (phoneme.equals("a") && !result.toString().isEmpty() && !lastWasConsonant) {
+                            // Skip 'a' if it's not the first character and follows a vowel
+                            continue;
                         }
-                        i++;
+                        result.append(phoneme);
+                        lastWasConsonant = false;
                     } else {
-                        if (!vowels.contains(phoneme)) {
+                        result.append(phoneme);
+                        lastWasConsonant = true;
+
+                        // Handle Apun Mayek
+                        if (nextChar.equals(APUN_MAYEK) && !nextNextChar.isEmpty() && reverseMeiteiMayekMapping.containsKey(nextNextChar)) {
+                            String nextPhoneme = reverseMeiteiMayekMapping.get(nextNextChar);
+                            result.append(nextPhoneme);
+                            skipNext = true;
+                            i++; // Skip the Apun Mayek character
+                        } else if (!nextChar.isEmpty() && reverseMeiteiMayekMapping.containsKey(nextChar) && isVowelDiacritic(nextChar)) {
+                            String vowelPhoneme = reverseMeiteiMayekMapping.get(nextChar);
+                            result.append(vowelPhoneme);
+                            i++;
+                        } else if (i == text.length() - 1) {
+                            // If it's the last consonant, add 'a'
                             result.append("a");
                         }
                     }
@@ -333,6 +356,7 @@ public class MM extends AndroidNonvisibleComponent {
                 }
 
                 result.append(character);
+                lastWasConsonant = false;
             }
 
             return postProcessTransliteration(result.toString());
@@ -350,6 +374,10 @@ public class MM extends AndroidNonvisibleComponent {
                 if (phoneme[2].equals(character) && Boolean.parseBoolean(phoneme[1])) return true;
             }
             return false;
+        }
+
+        private boolean isVowel(String phoneme) {
+            return vowels.contains(phoneme);
         }
 
         private String postProcessTransliteration(String text) {
